@@ -277,7 +277,7 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
 
     // query USDA API with predicted label
     usdaURL := fmt.Sprintf(
-        "https://api.nal.usda.gov/fdc/v1/foods/search?query=%s&dataType=Survey (FNDDS),Branded&api_key=%s",
+        "https://api.nal.usda.gov/fdc/v1/foods/search?query=%s&dataType=Survey%%20(FNDDS)&dataType=Branded&api_key=%s",
         url.QueryEscape(predictions[0].Label),
         config.Global.USDA_API_KEY,
     )
