@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/Sush1sui/internal/common"
 	"github.com/Sush1sui/internal/config"
@@ -29,7 +28,9 @@ func BarcodeHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    if r.Header.Get("X-APP-KEY") != os.Getenv("SUSHI_SECRET_KEY") {
+    appkey := r.Header.Get("X-APP-KEY")
+    fmt.Println("Received app key:", appkey) // debug log
+    if appkey != config.Global.SUSHI_SECRET_KEY {
         http.Error(w, "Unauthorized", http.StatusUnauthorized)
         return
     }

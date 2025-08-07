@@ -14,6 +14,7 @@ type Config struct {
 	HUGGINGFACE_API_KEY string
 	NUTRITIONIX_API_KEY string
 	NUTRITIONIX_APP_ID  string
+	SUSHI_SECRET_KEY    string
 }
 
 var Global *Config
@@ -51,6 +52,11 @@ func New() (*Config, error) {
 		return nil, fmt.Errorf("NUTRITIONIX_APP_ID is not set in the environment variables")
 	}
 
+	sushiSecretKey := os.Getenv("SUSHI_SECRET_KEY")
+	if sushiSecretKey == "" {
+		return nil, fmt.Errorf("SUSHI_SECRET_KEY is not set in the environment variables")
+	}
+
 	return &Config{
 		PORT:                port,
 		ServerURL:           serverURL,
@@ -58,5 +64,6 @@ func New() (*Config, error) {
 		HUGGINGFACE_API_KEY: huggingfaceAPIKey,
 		NUTRITIONIX_API_KEY: nutritionixAPIKey,
 		NUTRITIONIX_APP_ID:  nutritionixAppID,
+		SUSHI_SECRET_KEY:    sushiSecretKey,
 	}, nil
 }
