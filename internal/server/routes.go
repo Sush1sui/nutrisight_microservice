@@ -7,6 +7,7 @@ func NewRouter() http.Handler {
 	
 	mux.HandleFunc("/", IndexHandler)
 	mux.HandleFunc("/barcode", BarcodeHandler)
+	mux.HandleFunc("/food-scan", FoodScanHandler)
 	
 	return mux
 }
