@@ -1,9 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/Sush1sui/internal/common"
 	"github.com/Sush1sui/internal/config"
@@ -29,7 +32,6 @@ func BarcodeHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     appkey := r.Header.Get("X-APP-KEY")
-    fmt.Println("Received app key:", appkey) // debug log
     if appkey != config.Global.SUSHI_SECRET_KEY {
         http.Error(w, "Unauthorized", http.StatusUnauthorized)
         return
@@ -213,4 +215,135 @@ func BarcodeHandler(w http.ResponseWriter, r *http.Request) {
     }
     w.Header().Set("Content-Type", "application/json")
     json.NewEncoder(w).Encode(resp)
+}
+
+func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
+    if r.Method != http.MethodPost {
+        http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    appkey := r.Header.Get("X-APP-KEY")
+    if appkey != config.Global.SUSHI_SECRET_KEY {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        return
+    }
+
+    var req struct {
+        Image string `json:"image"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Image == "" {
+        http.Error(w, "No image provided", http.StatusBadRequest)
+        return
+    }
+
+    // decode base64 image
+    imgBytes, err := common.Base64ToBytes(req.Image)
+    if err != nil {
+        http.Error(w, "Invalid image format", http.StatusBadRequest)
+        return
+    }
+
+    // send image to HuggingFace API
+    hfReq, _ := http.NewRequest("POST", "https://api-inference.huggingface.co/models/nateraw/food", bytes.NewReader(imgBytes))
+    hfReq.Header.Set("Authorization", "Bearer "+config.Global.HUGGINGFACE_API_KEY)
+    hfReq.Header.Set("Content-Type", "application/octet-stream")
+    hfResp, err := http.DefaultClient.Do(hfReq)
+    if err != nil || hfResp.StatusCode != 200 {
+        body, _ := io.ReadAll(hfResp.Body)
+        http.Error(w, "Failed to fetch data from Hugging Face: "+string(body), http.StatusInternalServerError)
+        return
+    }
+    defer hfResp.Body.Close()
+
+    var predictions []struct {
+        Label string  `json:"label"`
+        Score float64 `json:"score"`
+    }
+    if err := json.NewDecoder(hfResp.Body).Decode(&predictions); err != nil || len(predictions) == 0 || predictions[0].Score < 0.5 {
+        http.Error(w, "No food items detected in the image", http.StatusNotFound)
+        return
+    }
+
+    // query USDA API with predicted label
+     usdaURL := fmt.Sprintf(
+        "https://api.nal.usda.gov/fdc/v1/foods/search?query=%s&dataType=Survey (FNDDS),Branded&api_key=%s",
+        url.QueryEscape(predictions[0].Label),
+        config.Global.USDA_API_KEY,
+    )
+    usdaResp, err := http.Get(usdaURL)
+    if err != nil || usdaResp.StatusCode != 200 {
+        http.Error(w, "Failed to fetch data from USDA API", http.StatusInternalServerError)
+        return
+    }
+    defer usdaResp.Body.Close()
+
+    var usdaData struct {
+        Foods []struct {
+            DataType      string `json:"dataType"`
+            Description   string `json:"description"`
+            Ingredients   string `json:"ingredients"`
+            ServingSize   float64 `json:"servingSize"`
+            ServingSizeUnit string `json:"servingSizeUnit"`
+            PackageWeight string `json:"packageWeight"`
+            FoodNutrients []struct {
+                NutrientName string  `json:"nutrientName"`
+                Value        float64 `json:"value"`
+                UnitName     string  `json:"unitName"`
+            } `json:"foodNutrients"`
+        } `json:"foods"`
+    }
+    json.NewDecoder(usdaResp.Body).Decode(&usdaData)
+
+    results := map[string]interface{}{
+        "foodName": predictions[0].Label,
+    }
+
+    // get nutrition from first Survey (FNDDS) food
+    for _, f := range usdaData.Foods {
+        if f.DataType == "Survey (FNDDS)" {
+            var nutrients []common.Nutrient
+            for _, n := range f.FoodNutrients {
+                if n.Value >= 0.1 {
+                    nutrients = append(nutrients, common.Nutrient{
+                        NutrientName: n.NutrientName,
+                        Value:        n.Value,
+                        UnitName:     n.UnitName,
+                    })
+                }
+            }
+            nutrition := common.ChunkArray(common.RenameNutrition(common.FilterNutrients(nutrients)), 6)
+            for i := range nutrition {
+                // flatten the chunked array to []map[string]any
+                chunked := common.ChunkArray(nutrition[i], 2)
+                flat := []map[string]any{}
+                for _, arr := range chunked {
+                    flat = append(flat, arr...)
+                }
+                nutrition[i] = flat
+            }
+            results["nutrition"] = nutrition
+            break
+        }
+    }
+    // get ingredients and serving size from first Branded food
+    for _, f := range usdaData.Foods {
+        if f.DataType == "Branded" && (f.PackageWeight != "" || (f.ServingSize > 0 && f.ServingSizeUnit != "")) && f.Ingredients != "" {
+            results["ingredients"] = f.Ingredients
+            if f.PackageWeight != "" {
+                results["servingSize"] = f.PackageWeight
+            } else {
+                results["servingSize"] = fmt.Sprintf("%v%v", f.ServingSize, f.ServingSizeUnit)
+            }
+            break
+        }
+    }
+
+    resp := map[string]interface{}{
+        "message": "Food scan data received successfully",
+        "data":    results,
+    }
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(resp)
+
 }
