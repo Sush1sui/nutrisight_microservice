@@ -219,14 +219,14 @@ func BarcodeHandler(w http.ResponseWriter, r *http.Request) {
 
 func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost {
-        fmt.Println("FoodScanHandler: Method not allowed")
+        // fmt.Println("FoodScanHandler: Method not allowed")
         http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
         return
     }
 
     appkey := r.Header.Get("X-APP-KEY")
     if appkey != config.Global.SUSHI_SECRET_KEY {
-        fmt.Println("FoodScanHandler: Unauthorized access attempt")
+        // fmt.Println("FoodScanHandler: Unauthorized access attempt")
         http.Error(w, "Unauthorized", http.StatusUnauthorized)
         return
     }
@@ -235,20 +235,20 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
         Image string `json:"image"`
     }
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Image == "" {
-        fmt.Println("FoodScanHandler: No image provided or decode error:", err)
+        // fmt.Println("FoodScanHandler: No image provided or decode error:", err)
         http.Error(w, "No image provided", http.StatusBadRequest)
         return
     }
-    fmt.Println("FoodScanHandler: Received image, decoding base64...")
+    // fmt.Println("FoodScanHandler: Received image, decoding base64...")
 
     // decode base64 image
     imgBytes, err := common.Base64ToBytes(req.Image)
     if err != nil {
-        fmt.Println("FoodScanHandler: Invalid image format:", err)
+        // fmt.Println("FoodScanHandler: Invalid image format:", err)
         http.Error(w, "Invalid image format", http.StatusBadRequest)
         return
     }
-    fmt.Println("FoodScanHandler: Base64 decoded, sending to Hugging Face API...")
+    // fmt.Println("FoodScanHandler: Base64 decoded, sending to Hugging Face API...")
 
     // send image to HuggingFace API
     hfReq, _ := http.NewRequest("POST", "https://api-inference.huggingface.co/models/nateraw/food", bytes.NewReader(imgBytes))
@@ -262,14 +262,14 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
     defer hfResp.Body.Close()
-    fmt.Println("FoodScanHandler: Hugging Face API responded, decoding predictions...")
+    // fmt.Println("FoodScanHandler: Hugging Face API responded, decoding predictions...")
 
     var predictions []struct {
         Label string  `json:"label"`
         Score float64 `json:"score"`
     }
     if err := json.NewDecoder(hfResp.Body).Decode(&predictions); err != nil || len(predictions) == 0 || predictions[0].Score < 0.5 {
-        fmt.Println("FoodScanHandler: No food items detected or decode error:", err)
+        // fmt.Println("FoodScanHandler: No food items detected or decode error:", err)
         http.Error(w, "No food items detected in the image", http.StatusNotFound)
         return
     }
@@ -281,7 +281,7 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
         url.QueryEscape(predictions[0].Label),
         config.Global.USDA_API_KEY,
     )
-    fmt.Println("FoodScanHandler: Querying USDA API with label:", predictions[0].Label)
+    // fmt.Println("FoodScanHandler: Querying USDA API with label:", predictions[0].Label)
     usdaResp, err := http.Get(usdaURL)
     if err != nil || usdaResp.StatusCode != 200 {
         fmt.Printf("FoodScanHandler: USDA API error: %v, status: %d\n", err, usdaResp.StatusCode)
@@ -289,7 +289,7 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
     defer usdaResp.Body.Close()
-    fmt.Println("FoodScanHandler: USDA API responded, decoding foods...")
+    // fmt.Println("FoodScanHandler: USDA API responded, decoding foods...")
 
     var usdaData struct {
         Foods []struct {
@@ -316,7 +316,7 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
     // get nutrition from first Survey (FNDDS) food
     for _, f := range usdaData.Foods {
         if f.DataType == "Survey (FNDDS)" {
-            fmt.Println("FoodScanHandler: Found Survey (FNDDS) food, extracting nutrients...")
+            // fmt.Println("FoodScanHandler: Found Survey (FNDDS) food, extracting nutrients...")
             var nutrients []common.Nutrient
             for _, n := range f.FoodNutrients {
                 if n.Value >= 0.1 {
@@ -343,7 +343,7 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
     // get ingredients and serving size from first Branded food
     for _, f := range usdaData.Foods {
         if f.DataType == "Branded" && (f.PackageWeight != "" || (f.ServingSize > 0 && f.ServingSizeUnit != "")) && f.Ingredients != "" {
-            fmt.Println("FoodScanHandler: Found Branded food, extracting ingredients and serving size...")
+            // fmt.Println("FoodScanHandler: Found Branded food, extracting ingredients and serving size...")
             results["ingredients"] = f.Ingredients
             if f.PackageWeight != "" {
                 results["servingSize"] = f.PackageWeight
@@ -354,7 +354,7 @@ func FoodScanHandler(w http.ResponseWriter, r *http.Request) {
         }
     }
 
-    fmt.Println("FoodScanHandler: Sending response to client.")
+    // fmt.Println("FoodScanHandler: Sending response to client.")
     resp := map[string]interface{}{
         "message": "Food scan data received successfully",
         "data":    results,
