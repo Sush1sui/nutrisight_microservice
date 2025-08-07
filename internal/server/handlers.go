@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/Sush1sui/internal/common"
 	"github.com/Sush1sui/internal/config"
@@ -25,6 +26,11 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 func BarcodeHandler(w http.ResponseWriter, r *http.Request) {
     if r.Method != http.MethodPost {
         http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+        return
+    }
+
+    if r.Header.Get("X-APP-KEY") != os.Getenv("SUSHI_SECRET_KEY") {
+        http.Error(w, "Unauthorized", http.StatusUnauthorized)
         return
     }
 
